@@ -1,6 +1,6 @@
-# **Echoes of Suspicion**
+# **Cloak of Deceit**
 
-**Echoes of Suspicion** je kooperativní a zároveň soutěživá multiplayerová 2D úniková hra, kde hráči společně řeší hádanky, aby unikli z tajemných místností. Mezi nimi se však skrývá sabotér – skrytý nepřítel, jehož cílem je zmařit úsilí ostatních, aniž by se odhalil. Hráči musí nejen spolupracovat, aby vyřešili různé logické výzvy, ale zároveň se snaží odhalit, kdo mezi nimi je zrádcem.
+**Cloak of Deceit** je kooperativní a zároveň soutěživá multiplayerová 2D úniková hra, kde hráči společně řeší hádanky, aby unikli z tajemných místností. Mezi nimi se však skrývá sabotér – skrytý nepřítel, jehož cílem je zmařit úsilí ostatních, aniž by se odhalil. Hráči musí nejen spolupracovat, aby vyřešili různé logické výzvy, ale zároveň se snaží odhalit, kdo mezi nimi je zrádcem.
 
 Hra kombinuje prvky kooperativního řešení hádanek s intenzivní atmosférou nedůvěry a skrytých úmyslů, což vytváří napětí a zábavu při každém sezení.
 
