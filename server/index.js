@@ -5,7 +5,7 @@ const { Server } = require("socket.io");
 const { dbConnect } = require('./utils/dbMongo');
 const { createGameState } = require('./utils/functions');
 const { MongoClient } = require('mongodb');
-require('dotenv').config()
+require('dotenv').config({ path: ['.env.local', '.env']  })
 
 dbConnect()
 const client = new MongoClient(process.env.MONGODB_URL);
@@ -68,10 +68,10 @@ io.on("connection", async (socket) => {
   }
 
   const gameStateUpdateMovement = async(gameState, code, id, x, y) => {
-    const gameStateCollection = client.db().collection('game-states')
-    const newGameState = { ...gameState, players: gameState.players.map((player) => player._id === id ? ({ ...player, x, y }) : player) }
-    await gameStateCollection.updateOne({ code }, { $set: { players: newGameState.players } })
-    io.in(code).emit('game_gamestate_movement', newGameState)
+    // const gameStateCollection = client.db().collection('game-states')
+    // const newGameState = { ...gameState, players: gameState.players.map((player) => player._id === id ? ({ ...player, x, y }) : player) }
+    // await gameStateCollection.updateOne({ code }, { $set: { players: newGameState.players } })
+    // io.in(code).emit('game_gamestate_movement', newGameState)
   }
 
   socket.on('game_movement', ({ gameState, code, id, x, y }) => gameStateUpdateMovement(gameState, code, id, x, y))

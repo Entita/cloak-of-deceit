@@ -2,8 +2,8 @@ import * as Phaser from 'phaser';
 import { Socket } from 'socket.io-client';
 
 export class Room extends Phaser.Scene {
-  mapSize = { width: 400, height: 250 };
-  playerSize = { width: 26, height: 32 };
+  mapSize = { width: 0, height: 0 };
+  playerSize = { width: 585, height: 400, maxWidth: 200, currentWidth: 0 };
   bgSize = { width: 800, height: 600 };
   target: any = new Phaser.Math.Vector2();
   socket: Socket | undefined;
@@ -11,33 +11,104 @@ export class Room extends Phaser.Scene {
   dbGame: any;
   gameState: any;
   allObjectGroup: any = {}
+  directions = ['left', 'front', 'right', 'back']
+  room_direction: 'left' | 'front' | 'right' | 'back' = 'front'
+  room_changin_direction: boolean = false
+  direction_shift: number = 0
 
   constructor() {
     super('room');
   }
 
   preload() {
-    this.load.setBaseURL('https://labs.phaser.io');
-    this.load.image('player', 'assets/sprites/clown.png');
-    this.load.image('sky', 'assets/skies/space3.png');
+    this.load.setBaseURL('/images');
+    this.load.image('room_front', '/room_front.png');
+    this.load.image('room_left', '/room_left.png');
+    this.load.image('room_right', '/room_right.png');
+    this.load.image('room_back', '/room_back.png');
+    this.load.image('player', '/silhouette.png');
     this.account = this.registry.getAll().account
     this.socket = this.registry.getAll().socket
     this.dbGame = this.registry.getAll().dbGame
-    this.handleSocket()
+    this.load.on('complete', () => this.handleSocket())
+  }
+
+  getScale(objectWidth: number, objectHeight: number) {
+    const { width, height } = this.game.canvas;
+    const widthRatio = width / objectWidth
+    const heightRatio = height / objectHeight
+    if (widthRatio < heightRatio) {
+      const newWidth = Math.min(objectWidth, width)
+      const newHeight = (newWidth / objectWidth) * objectHeight
+      return { scaleX: newWidth / objectWidth, scaleY: newHeight / objectHeight }
+    } else {
+      const newHeight = Math.min(objectHeight, height)
+      const newWidth = (newHeight / objectHeight) * objectWidth
+      return { scaleX: newWidth / objectWidth, scaleY: newHeight / objectHeight }
+    }
+  }
+
+  getXFromMap(mapCoords: { x: number; y: number }, direction: 'front' | 'left' | 'right' | 'back') {
+    if (direction === 'front') return mapCoords.x + this.mapSize.width / 2
+    else if (direction === 'left') return mapCoords.x - this.mapSize.width / 2
+    else if (direction === 'right') return mapCoords.x + this.mapSize.width / 2 + this.mapSize.width
+    return mapCoords.x + this.mapSize.width / 2 + this.mapSize.width * 2
+  }
+
+  createSide(direction: 'front' | 'left' | 'right' | 'back') {
+    const { width, height } = this.game.canvas
+
+    const map = this.add.image(width / 2, height / 2, `room_${direction}`)
+    const mapScale = this.getScale(map.width, map.height)
+    map.setScale(mapScale.scaleX, mapScale.scaleY)
+    this.mapSize = { width: map.width * mapScale.scaleX, height: map.height * mapScale.scaleY }
+
+    const mapCoords = this.getCoordsInCanvasFromRoom()
+    const mapX = this.getXFromMap(mapCoords, direction)
+
+    const directionIndex = this.directions.indexOf(this.room_direction)
+    const directionX = this.mapSize.width * directionIndex - this.mapSize.width
+
+    map.setX(mapX - directionX)
+    if (!this.allObjectGroup.map) this.allObjectGroup.map = { [direction]: map }
+    else this.allObjectGroup.map[direction] = map
+  }
+
+  createMap() {
+    this.createSide('left')
+    this.createSide('front')
+    this.createSide('right')
+    this.createSide('back')
+  }
+
+  createRoomControls() {
+    const { width, height } = this.game.canvas
+    const leftArrow = this.add.rectangle(20, height / 2 - 25, 40, 50, 0xff0000)
+      .setInteractive({
+        hitArea: new Phaser.Geom.Rectangle(0, 0, 40, 50),
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        useHandCursor: true,
+    })
+    const rightArrow = this.add.rectangle(width - 20, height / 2 - 25, 40, 50, 0xff0000)
+    .setInteractive({
+      hitArea: new Phaser.Geom.Rectangle(0, 0, 40, 50),
+      hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+      useHandCursor: true,
+    })
+    this.allObjectGroup.controls = [leftArrow, rightArrow]
+    this.input.enableDebug(leftArrow)
+    this.input.enableDebug(rightArrow)
+
+    leftArrow.on('pointerdown', () => {
+      if (!this.room_changin_direction) this.animationMovingMap('right')
+    })
+    rightArrow.on('pointerdown', () => {
+      if (!this.room_changin_direction) this.animationMovingMap('left')
+    })
   }
 
   create() {
-    const { width, height } = this.game.canvas;
-
-    // create background
-    const bg = this.add.image(width / 2, height / 2, 'sky');
-    bg.scaleX = Math.max(width / this.bgSize.width, 1)
-    bg.scaleY = Math.max(height / this.bgSize.height, 1)
-    this.allObjectGroup.background = bg
-
-    // draw map
-    const map = this.add.rectangle(width / 2, height / 2, this.mapSize.width, this.mapSize.height, 0xff0000)
-    this.allObjectGroup.map = map
+    this.createMap()
 
     // create boundary within mapsize
     const mapCoords = this.getCoordsInCanvasFromRoom()
@@ -49,29 +120,99 @@ export class Room extends Phaser.Scene {
     )
 
     // create interactive area
-    const zone = this.add.zone(width / 2, height / 2, 100, 150)
+    // const zone = this.add.zone(width / 2, height / 2, 100, 150)
 
-    this.physics.world.enable(zone, 1)
-    this.allObjectGroup.zone = zone
+    // this.physics.world.enable(zone, 1)
+    // this.allObjectGroup.zone = zone
 
-    zone.on('enterzone', (collider: any) => console.log('enterzone', collider));
+    // controls
+    this.createRoomControls()
+
     this.scale.on('resize', this.resize, this);
-    this.input.on('pointerdown', this.moveOnClick, this)
+  }
+
+  getDirection(direction: 'left' | 'right') {
+    const directions: any = ['left', 'front', 'right', 'back']
+    const directionIndex = directions.indexOf(this.room_direction)
+    var newDirectionIndex = direction === 'left' ? directionIndex + 1 : directionIndex - 1
+    if (newDirectionIndex < 0) newDirectionIndex = directions.length - 1
+    if (newDirectionIndex > directions.length - 1) newDirectionIndex = 0
+    return directions[newDirectionIndex]
+  }
+
+  animationMovingMap(direction: 'left' | 'right') {
+    const map = this.allObjectGroup.map
+    const maps = [map.front, map.left, map.right, map.back]
+    const newDirection = this.getDirection(direction)
+
+    // move map
+    if (direction === 'right' && this.directions[0] === this.room_direction) {
+      map[newDirection].setX(map[newDirection].x - this.mapSize.width * 4)
+      this.directions.unshift(this.directions[this.directions.length - 1])
+      this.directions.pop()
+      this.direction_shift -= 1
+      if (this.direction_shift === -4) this.direction_shift = 0
+    } else if (direction === 'left' && this.directions[this.directions.length - 1] === this.room_direction) {
+      map[newDirection].setX(map[newDirection].x + this.mapSize.width * 4)
+      this.directions.push(this.directions[0])
+      this.directions.shift()
+      this.direction_shift += 1
+      if (this.direction_shift === 4) this.direction_shift = 0
+    }
+
+    // move animation
+    maps.forEach((map: any) => {
+      this.room_changin_direction = true
+      const tween = this.tweens.add({
+        targets: map,
+        x: direction === 'left' ? map.x - this.mapSize.width : map.x + this.mapSize.width,
+        ease: 'Power1',
+        duration: 1000
+      })
+      tween.on('complete', () => {
+        this.room_changin_direction = false
+      })
+    })
+    this.room_direction = newDirection
   }
 
   resize(gameSize: any) {
     const { width, height } = gameSize
     const mapCoords = this.getCoordsInCanvasFromRoom()
 
-    // scale background
-    const bg = this.allObjectGroup.background
-    bg.scaleX = Math.max(width / this.bgSize.width, 1)
-    bg.scaleY = Math.max(height / this.bgSize.height, 1)
+    // scale map
+    const map = this.allObjectGroup.map.front
+    const mapScale = this.getScale(map.width, map.height)
+    map.setScale(mapScale.scaleX, mapScale.scaleY)
+    this.mapSize = { width: map.width * mapScale.scaleX, height: map.height * mapScale.scaleY }
     // move all objects
     const phaserObjects = Object.entries(this.allObjectGroup)
     phaserObjects.forEach((phaserObject: any) => {
-      phaserObject[1].setX(width / 2)
-      phaserObject[1].setY(height / 2)
+      if (phaserObject[0] === 'controls') {
+        // move temporary controls of room
+        phaserObject[1][0].setX(20)
+        phaserObject[1][0].setY(height / 2 - 25)
+        phaserObject[1][1].setX(width - 20)
+        phaserObject[1][1].setY(height / 2 - 25)
+      } else if (phaserObject[0] === 'map') {
+        const mapSides = Object.entries(phaserObject[1])
+
+        mapSides.forEach((map: any, index: number) => {
+          // find new x according to each room based of the room shuffle
+          const mapCoords = this.getCoordsInCanvasFromRoom()
+          var directionIndex = this.directions.indexOf(this.room_direction) + this.direction_shift
+          var directionX = this.mapSize.width * directionIndex - this.mapSize.width
+          if (index >= this.directions.length + this.direction_shift) directionX += this.mapSize.width * 4
+          if (index < this.direction_shift && this.direction_shift > 0) directionX -= this.mapSize.width * 4
+          const mapX = this.getXFromMap(mapCoords, map[0])
+          map[1].setX(mapX - directionX)
+          map[1].setY(height / 2)
+          map[1].setScale(mapScale.scaleX, mapScale.scaleY)
+        })
+      } else {
+        phaserObject[1].setX(width / 2)
+        phaserObject[1].setY(height / 2)
+      }
     })
     // move boundary
     this.physics.world.setBounds(
@@ -81,21 +222,12 @@ export class Room extends Phaser.Scene {
       this.mapSize.height,
     )
     // move players
-    this.gameState.players.forEach((player: any) => {
-      const canvasX = mapCoords.x + player.x
-      const canvasY = mapCoords.y + player.y
-      const minX = mapCoords.x
-      const maxX = mapCoords.x + this.mapSize.width
-      const minY = mapCoords.y
-      const maxY = mapCoords.y + this.mapSize.height
-      const isInsideHorizontally = minX < canvasX && canvasX <= maxX
-      const isInsideVertically = minY < canvasY && canvasY <= maxY
-      if (isInsideHorizontally && isInsideVertically) {
-        const newX = canvasX
-        const newY = canvasY
-        player.sprite.setX(newX)
-        player.sprite.setY(newY)
-      }
+    this.playerSize.currentWidth = Math.min(this.playerSize.maxWidth, this.mapSize.height * 0.35)
+    this.gameState.players.forEach((player: any, index: number) => {
+      const playerPositionAndScaling = this.getPlayerPositionAndScaling(index, this.gameState.players.length)
+      player.sprite.setX(playerPositionAndScaling.x)
+      player.sprite.setY(playerPositionAndScaling.y)
+      player.sprite.setScale(playerPositionAndScaling.scale)
     })
   }
 
@@ -107,118 +239,42 @@ export class Room extends Phaser.Scene {
     }
   }
 
-  // getCoordsInRoomFromCanvas(x: number, y: number) {
-  //   const mapCoords = this.getCoordsInCanvasFromRoom()
-
-  //   return {
-  //     x: mapCoords.x + x,
-  //     y: mapCoords.y + y,
-  //   }
-  // }
-
-  moveOnClick(pointer: any) {
-    const mapCoords = this.getCoordsInCanvasFromRoom()
-    const minX = mapCoords.x
-    const maxX = mapCoords.x + this.mapSize.width
-    const minY = mapCoords.y
-    const maxY = mapCoords.y + this.mapSize.height
-    const isInsideHorizontally = minX < pointer.worldX && pointer.worldX <= maxX
-    const isInsideVertically = minY < pointer.worldY && pointer.worldY <= maxY
-    if (isInsideHorizontally && isInsideVertically) {
-      // if clicked inside a map
-      const player = this.gameState.players.find((player: any) => player._id === this.account._id)
-      const simpleGameState = JSON.parse(JSON.stringify(this.gameState))
-      simpleGameState.players.forEach((player: any) => delete player.sprite)
-      // calculate the size of player, so he won't go over bounder
-      var newX = pointer.worldX - minX
-      var newY = pointer.worldY - minY
-      if (newX > this.mapSize.width - this.playerSize.width / 2) newX = this.mapSize.width - this.playerSize.width / 2
-      if (newX < this.playerSize.width / 2) newX = this.playerSize.width / 2
-      if (newY > this.mapSize.height - this.playerSize.height / 2) newY = this.mapSize.height - this.playerSize.height / 2
-      if (newY < this.playerSize.height / 2) newY = this.playerSize.height / 2
-      this.socket?.emit('game_movement', {
-        gameState: simpleGameState,
-        code: this.dbGame?.code,
-        id: player._id,
-        x: newX,
-        y: newY,
-      })
-    }
-  }
-
   handleSocket() {
     this.socket?.emit('game_gamestate', this.dbGame.code)
     this.socket?.on('game_gamestate', this.handleGameState.bind(this))
-    this.socket?.on('game_gamestate_movement', this.handleMovement.bind(this))
   }
 
-  handleMovement(gameState: any) {
-    // on any player movement change, this is called and the player that moved is moved
-    const mapCoords = this.getCoordsInCanvasFromRoom()
+  getPlayerPositionAndScaling(index: number, numberOfPlayers: number) {
+    const { height } = this.game.canvas
+    const canvasX = this.getCoordsInCanvasFromRoom()
+    const spaceBetweenPlayers = this.mapSize.width / numberOfPlayers
+    const newPlayerWidth = Math.min(spaceBetweenPlayers, this.playerSize.currentWidth)
+    const playerScale = newPlayerWidth / this.playerSize.width
+    const playerX = canvasX.x + newPlayerWidth / 2 + spaceBetweenPlayers * index + (spaceBetweenPlayers / 2 - newPlayerWidth / 2)
+    const playerY = height / 2 + this.mapSize.height / 2 - (this.playerSize.height * playerScale) / 2
 
-    this.gameState.players.forEach((player: any, index: number) => {
-      const newPlayer = gameState.players[index]
-      if (player.x === newPlayer.x && player.y === newPlayer.y) return
-      const canvasX = mapCoords.x + newPlayer.x
-      const canvasY = mapCoords.y + newPlayer.y
-      const target = new Phaser.Math.Vector2(canvasX, canvasY)
-      player.x = newPlayer.x
-      player.y = newPlayer.y
-      this.physics.moveToObject(player.sprite, target, 200)
-    })
-  }
-
-  handleGameState(newGameState: any) {
-    // update game state with current data, if init create sprites
-    const mapCoords = this.getCoordsInCanvasFromRoom()
-
-    if (!this.gameState) {
-      // init players with sprites
-      newGameState.players.forEach((player: any) => {
-        player.sprite = this.physics.add
-          .sprite(mapCoords.x + player.x, mapCoords.y + player.y, 'player')
-          .setCollideWorldBounds(true)
-        player.sprite.body.debugBodyColor = 0x00ff00;
-        this.physics.add.collider(player.sprite, this.allObjectGroup.zone, () => this.allObjectGroup.zone.emit('enterzone', player))
-      })
-      this.gameState = newGameState
-    } else {
-      // change state of game state, but keep player sprites
-      this.gameState = {
-        ...newGameState,
-        players: newGameState.players.map((player: any, index: number) => ({
-          ...player,
-          sprite: this.gameState.players[index].sprite,
-        }))
-      }
+    return {
+      x: playerX,
+      y: playerY,
+      scale: playerScale,
     }
   }
 
-  handleMovementSmoothStop() {
-    // if the player is in motion, smoothly stop him if he is close to the target
-    if (!this.gameState) return
-    const mapCoords = this.getCoordsInCanvasFromRoom()
-
-    this.gameState.players.forEach((player: any) => {
-      if (player.sprite.body.speed > 0) {
-        const canvasX = mapCoords.x + player.x
-        const canvasY = mapCoords.y + player.y
-        const target = new Phaser.Math.Vector2(canvasX, canvasY)
-        const distance = Phaser.Math.Distance.BetweenPoints(player.sprite.body.center, target);
-        // const isPlayerTouching = !player.sprite.body.touching.none
-        this.physics.moveToObject(player.sprite, target, 200);
-        player.sprite.body.velocity.scale(Phaser.Math.SmoothStep(distance, 0, 20));
-
-        if (distance < 1) {
-          player.sprite.body.debugBodyColor = 0x00ff00;
-        } else {
-          player.sprite.body.debugBodyColor = 0xffff00;
-        }
-      }
-    })
+  handleGameState(newGameState: any) {
+    // update game state with current data
+    if (!this.gameState) {
+      this.playerSize.currentWidth = Math.min(this.playerSize.maxWidth, this.mapSize.height * 0.35)
+      newGameState.players.forEach((player: any, index: number) => {
+        const playerPositionAndScaling = this.getPlayerPositionAndScaling(index, newGameState.players.length)
+        player.sprite = this.physics.add.image(playerPositionAndScaling.x, playerPositionAndScaling.y, 'player')
+        player.sprite.setScale(playerPositionAndScaling.scale)
+      })
+      this.gameState = newGameState
+    }
+    this.gameState = newGameState
   }
 
   update() {
-    this.handleMovementSmoothStop()
+
   }
 }
